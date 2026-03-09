@@ -80,7 +80,10 @@ export const FORLI_SYSTEM_PROMPT = `### Role & Identity
 
 ### זיהוי מין הלקוח
 נסי להבין מההודעה שלו אם הוא זכר או נקבה (לפי סיומות פעלים כמו "אני מחפש" לעומת "אני מחפשת"). 
-אם לא הצלחת לזהות, פני בלשון זכר כברירת מחדל.`;
+אם לא הצלחת לזהות, פני בלשון זכר כברירת מחדל.
+
+### סיכום מידע (כרטיס עסק)
+אם המשתמש שואל מה את יודעת עליו, או מבקש לראות את המידע שלו, הציגי לו סיכום ידידותי ומאורגן של כל הפרטים שאספת עד כה: שם, שם העסק, תיאור, שעות פעילות, קטלוג וכמות שאלות נפוצות.`;
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -143,7 +146,12 @@ const isDetailsRequest = (text: string) => {
 };
 
 const isFAQCollectionRequest = (text: string) => {
-    const keywords = ["שאלות ותשובות", "שאלות נפוצות", "faq", "questions", "להוסיף שאלה", "הוספת שאלה"];
+    const keywords = ["שאלות ותשובות", "שאלות נפוצות", "faq", "questions", "להוסיף שאלה", "הוספת שאלה", "שאלות"];
+    return keywords.some(k => text.toLowerCase().includes(k));
+};
+
+const isMyInfoRequest = (text: string) => {
+    const keywords = ["מה את יודעת", "מה המידע", "המידע שלי", "כרטיס העסק שלי", "הפרטים שלי", "my info", "my details", "business card"];
     return keywords.some(k => text.toLowerCase().includes(k));
 };
 
@@ -190,6 +198,20 @@ const getStepsRemaining = (state: ForliState) => {
     return "";
 };
 
+const formatSummary = (state: ForliState) => {
+    const lines = [`הינה המידע שיש לי על העסק שלך עד כה: 🦉`];
+    if (state.ownerName) lines.push(`• **שם בעלים:** ${state.ownerName}`);
+    if (state.businessName) lines.push(`• **שם העסק:** ${state.businessName}`);
+    if (state.description) lines.push(`• **תיאור:** ${state.description}`);
+    if (state.hours) lines.push(`• **שעות פעילות:** ${state.hours}`);
+    if (state.catalog) lines.push(`• **קטלוג:** ${state.catalog}`);
+    if (state.collectedFaqs && state.collectedFaqs.length > 0) {
+        lines.push(`• **שאלות נפוצות:** נאספו ${state.collectedFaqs.length} שאלות.`);
+    }
+    lines.push(`\n${g(state, 'תרצה', 'תרצי')} לעדכן או להוסיף משהו נוסף?`);
+    return lines.join('\n');
+};
+
 export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessName, action }: ForliTurn): ForliTurnResult => {
     const now = Date.now();
     const safeState: ForliState = { ...state, collectedFaqs: [...(state.collectedFaqs || [])] };
@@ -230,10 +252,15 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
 
     const details = isDetailsRequest(text);
     const pricing = isPriceCheck(text);
+    const myInfo = isMyInfoRequest(text);
     const stepsLine = getStepsRemaining(safeState);
 
     if (safeState.phase === 'welcome') {
         safeState.hasGreeted = true;
+    }
+
+    if (myInfo && (safeState.ownerName || safeState.businessName)) {
+        return { replies: [{ text: formatSummary(safeState), showActions: true }], state: safeState };
     }
 
     if (isExistingBusiness && safeState.phase === 'welcome') {
@@ -335,7 +362,8 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
             };
         }
 
-        case 'cardReady': {
+        case 'cardReady':
+        case 'done': {
             const faqList = tryParseFaqList(text);
             if (faqList.length > 0 || isFAQCollectionRequest(text)) {
                 safeState.phase = 'faqs';
@@ -358,8 +386,16 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
             } else if (isCatalogCollectionRequest(text)) {
                 safeState.phase = 'catalog';
                 replies.push({ text: `${g(safeState, 'מצוין. שלח', 'מצוין. שלחי')} לי בבקשה את רשימת המוצרים או השירותים שלך.`, showActions: true });
+            } else if (myInfo && (safeState.ownerName || safeState.businessName)) {
+                // Info request already handled globally for myInfo, but if we're here it means it wasn't caught
+                replies.push({ text: formatSummary(safeState), showActions: true });
             } else {
-                replies.push({ text: 'כבר יש לי את כרטיס העסק שלך. רוצה להוסיף שעות, שאלות נפוצות, או קטלוג?', showActions: true });
+                replies.push({
+                    text: safeState.phase === 'done'
+                        ? `אני כאן מתי שתצטרך${g(safeState, '', 'י')}. ${g(safeState, 'תרצה', 'תרצי')} להוסיף עוד שעות, שאלות נפוצות או קטלוג?`
+                        : 'כבר יש לי את כרטיס העסק שלך. רוצה להוסיף שעות, שאלות נפוצות, או קטלוג?',
+                    showActions: true
+                });
             }
             break;
         }
@@ -403,11 +439,6 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
                 safeState.faqSubPhase = 'asking';
                 safeState.currentFaqQuestion = undefined;
             }
-            break;
-        }
-
-        case 'done': {
-            replies.push({ text: `אני כאן מתי שתצטרך${g(safeState, '', 'י')}.` });
             break;
         }
 

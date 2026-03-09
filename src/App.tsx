@@ -50,6 +50,18 @@ type Preset = {
 
 const HEBREW_REGEX = /[\u0590-\u05FF]/;
 
+const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    // Fallback for non-secure contexts (e.g. mobile testing over local network)
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+};
+
 const presets: Preset[] = [
     {
         label: 'Unknown number',
@@ -90,6 +102,7 @@ function App() {
     const [humanHandoff, setHumanHandoff] = useState(false);
     const [numberSwitch, setNumberSwitch] = useState(false);
     const feedRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
         try {
@@ -181,7 +194,7 @@ function App() {
         setIsResponding(true);
 
         const placeholder: ChatMessage = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             sender: 'forli',
             text: 'Forli is thinking…',
             isLoading: true,
@@ -194,7 +207,7 @@ function App() {
             setMessages((prev) => prev.filter((m) => m.id !== placeholder.id));
 
             const mapped = replies.map<ChatMessage>((reply) => ({
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 sender: 'forli',
                 text: reply.text,
                 json: reply.json ?? undefined,
@@ -214,7 +227,7 @@ function App() {
         const trimmed = text.trim();
 
         const userMessage: ChatMessage = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             sender: 'user',
             text: trimmed,
             timestamp: Date.now(),
@@ -262,7 +275,7 @@ function App() {
         const actionCopy = { add_hours: 'Add Hours', add_faqs: 'Add FAQs', done: "I'm Done" } as const;
 
         const userAction: ChatMessage = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             sender: 'user',
             text: actionCopy[action],
             timestamp: Date.now(),
@@ -477,24 +490,45 @@ function App() {
                         <form
                             onSubmit={(e) => {
                                 e.preventDefault();
+                                if (!messageInput.trim() || isResponding) return;
                                 handleSend(messageInput);
                             }}
-                            className="border-t border-white/5 bg-slate-900/60 px-4 sm:px-6 py-4 flex items-center gap-3"
+                            className="border-t border-white/5 bg-slate-900/60 px-4 sm:px-6 py-4 flex items-end gap-3"
                         >
                             <div className="flex-1">
                                 <label className="sr-only" htmlFor="message">Message</label>
-                                <input
+                                <textarea
                                     id="message"
+                                    ref={textareaRef}
+                                    rows={1}
                                     value={messageInput}
-                                    onChange={(e) => setMessageInput(e.target.value)}
+                                    onChange={(e) => {
+                                        setMessageInput(e.target.value);
+                                        // Auto-expand
+                                        if (textareaRef.current) {
+                                            textareaRef.current.style.height = 'auto';
+                                            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+                                        }
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            if (messageInput.trim() && !isResponding) {
+                                                handleSend(messageInput);
+                                                if (textareaRef.current) {
+                                                    textareaRef.current.style.height = 'auto';
+                                                }
+                                            }
+                                        }
+                                    }}
                                     placeholder="Type to test Forli’s onboarding…"
-                                    className="w-full rounded-2xl bg-slate-800/70 border border-white/10 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full rounded-2xl bg-slate-800/70 border border-white/10 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none overflow-y-auto"
                                 />
                             </div>
                             <button
                                 type="submit"
                                 disabled={!messageInput.trim() || isResponding}
-                                className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-semibold shadow-lg shadow-indigo-500/30 disabled:opacity-50 flex-shrink-0"
+                                className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center text-white font-semibold shadow-lg shadow-indigo-500/30 disabled:opacity-50 flex-shrink-0 mb-[2px]"
                             >
                                 <Send className="h-5 w-5" />
                             </button>
