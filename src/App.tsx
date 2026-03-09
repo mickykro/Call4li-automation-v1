@@ -617,7 +617,7 @@ function App() {
                                 <span className={`px-2 py-0.5 rounded-full border ${conversationState.hours ? 'border-emerald-400 text-emerald-200 bg-emerald-500/10' : 'border-white/10'}`}>
                                     Hours
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full border ${conversationState.catalog ? 'border-emerald-400 text-emerald-200 bg-emerald-500/10' : 'border-white/10'}`}>
+                                <span className={`px-2 py-0.5 rounded-full border ${(conversationState.collectedProducts?.length ?? 0) > 0 ? 'border-emerald-400 text-emerald-200 bg-emerald-500/10' : 'border-white/10'}`}>
                                     Catalog
                                 </span>
                                 <span className={`px-2 py-0.5 rounded-full border ${(conversationState.collectedFaqs?.length ?? 0) > 0 ? 'border-emerald-400 text-emerald-200 bg-emerald-500/10' : 'border-white/10'}`}>
@@ -649,8 +649,22 @@ function App() {
                                     <span className="text-slate-200">{conversationState.hours || '—'}</span>
 
                                     <span className="text-slate-500">Catalog:</span>
-                                    <span className="text-slate-200 line-clamp-2">{conversationState.catalog || '—'}</span>
+                                    <span className="text-slate-200">{(conversationState.collectedProducts?.length ?? 0) > 0 ? `${conversationState.collectedProducts?.length} items` : '—'}</span>
                                 </div>
+
+                                {(conversationState.collectedProducts?.length ?? 0) > 0 && (
+                                    <div className="space-y-1 mt-3">
+                                        <p className="text-slate-500 uppercase tracking-tighter font-bold text-[10px]">Product Catalog ({conversationState.collectedProducts?.length})</p>
+                                        <div className="max-h-32 overflow-y-auto pr-1 space-y-1 thin-scrollbar">
+                                            {conversationState.collectedProducts?.map((product, idx) => (
+                                                <div key={idx} className="flex justify-between items-center p-1.5 rounded bg-white/5 border border-white/5">
+                                                    <span className="text-slate-200 font-medium truncate pr-2">{product.name}</span>
+                                                    <span className="text-blue-400 font-mono text-[10px] flex-shrink-0">{product.price}₪</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {(conversationState.collectedFaqs?.length ?? 0) > 0 && (
                                     <div className="space-y-1 mt-3">

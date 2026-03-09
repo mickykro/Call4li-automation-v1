@@ -35,7 +35,10 @@ export type ForliState = {
     lastInteractionTime?: number;
     hours?: string;
     collectedFaqs?: { q: string; a: string }[];
-    catalog?: string;
+    catalogSubPhase?: 'askingName' | 'askingDescription' | 'askingPrice';
+    currentProductName?: string;
+    currentProductDescription?: string;
+    collectedProducts?: { name: string; description: string; price: string }[];
 };
 
 export type ForliTurn = {
@@ -126,7 +129,7 @@ const detectUserGender = (text: string): Gender | undefined => {
 };
 
 const isHumanHandoff = (text: string) => {
-    const keywords = ["נציג", "אדם", "שיחה", "טלפון", "וואטסאפ", "representative", "human", "talk", "person"];
+    const keywords = ["נציג אנושי", "מענה אנושי", "לדבר עם אדם", "representative", "human help", "talk to human"];
     return keywords.some(k => text.toLowerCase().includes(k));
 };
 
@@ -152,6 +155,11 @@ const isFAQCollectionRequest = (text: string) => {
 
 const isMyInfoRequest = (text: string) => {
     const keywords = ["מה את יודעת", "מה המידע", "המידע שלי", "כרטיס העסק שלי", "הפרטים שלי", "my info", "my details", "business card"];
+    return keywords.some(k => text.toLowerCase().includes(k));
+};
+
+const isEditRequest = (text: string) => {
+    const keywords = ["שנה", "ערוך", "עדכן", "תיקון", "לשנות", "לערוך", "לעדכן", "edit", "change", "fix", "wrong"];
     return keywords.some(k => text.toLowerCase().includes(k));
 };
 
@@ -204,7 +212,12 @@ const formatSummary = (state: ForliState) => {
     if (state.businessName) lines.push(`• **שם העסק:** ${state.businessName}`);
     if (state.description) lines.push(`• **תיאור:** ${state.description}`);
     if (state.hours) lines.push(`• **שעות פעילות:** ${state.hours}`);
-    if (state.catalog) lines.push(`• **קטלוג:** ${state.catalog}`);
+    if (state.collectedProducts && state.collectedProducts.length > 0) {
+        lines.push(`• **קטלוג:** ${state.collectedProducts.length} מוצרים.`);
+        state.collectedProducts.forEach(p => {
+            lines.push(`  - ${p.name} (${p.price}₪)`);
+        });
+    }
     if (state.collectedFaqs && state.collectedFaqs.length > 0) {
         lines.push(`• **שאלות נפוצות:** נאספו ${state.collectedFaqs.length} שאלות.`);
     }
@@ -229,24 +242,6 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
     const detectedGender = detectUserGender(text);
     if (detectedGender) safeState.userGender = detectedGender;
 
-    // 1. Human Handoff
-    if (isHumanHandoff(text)) {
-        return {
-            replies: [{ text: "לחץ על הכפתור למטה כדי לשוחח עם נציג אנושי." }],
-            state: safeState,
-            humanHandoff: true
-        };
-    }
-
-    // 2. Number Switch
-    if (isNumberSwitch(text)) {
-        return {
-            replies: [{ text: `${g(safeState, "מעולה. תשלח", "מעולה. תשלחי")} מהמספר החדש הודעה קצרה כאן, ואני אחבר גם אותו.` }],
-            state: safeState,
-            numberSwitch: true
-        };
-    }
-
     const lang = 'he';
     safeState.lang = lang;
 
@@ -257,10 +252,6 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
 
     if (safeState.phase === 'welcome') {
         safeState.hasGreeted = true;
-    }
-
-    if (myInfo && (safeState.ownerName || safeState.businessName)) {
-        return { replies: [{ text: formatSummary(safeState), showActions: true }], state: safeState };
     }
 
     if (isExistingBusiness && safeState.phase === 'welcome') {
@@ -288,6 +279,38 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
             replies.push({ text: 'הכל מוכן. אני כאן: פשוט תגיד כשתרצה להוסיף עוד.' });
         }
         return { replies, state: safeState };
+    }
+
+    const isCollectionPhase = ['collectName', 'collectBusiness', 'collectDescription', 'faqs', 'hours', 'catalog'].includes(safeState.phase);
+
+    // 1. Human Handoff (Only if NOT in a collection phase, or if very specific)
+    if (isHumanHandoff(text)) {
+        // If they are in a collection phase, they might be describing a "human" service. 
+        // We only trigger handoff if the text is SHORT and contains handoff keywords.
+        const isShort = text.split(' ').length <= 4;
+        if (!isCollectionPhase || isShort) {
+            return {
+                replies: [{ text: "לחץ על הכפתור למטה כדי לשוחח עם נציג אנושי." }],
+                state: safeState,
+                humanHandoff: true
+            };
+        }
+    }
+
+    // 2. Number Switch
+    if (isNumberSwitch(text)) {
+        return {
+            replies: [{ text: `${g(safeState, "מעולה. תשלח", "מעולה. תשלחי")} מהמספר החדש הודעה קצרה כאן, ואני אחבר גם אותו.` }],
+            state: safeState,
+            numberSwitch: true
+        };
+    }
+
+    if (myInfo && (safeState.ownerName || safeState.businessName)) {
+        // Only trigger info summary if NOT in a collection phase
+        if (!isCollectionPhase) {
+            return { replies: [{ text: formatSummary(safeState), showActions: true }], state: safeState };
+        }
     }
 
     // 4. Handle Questions during onboarding
@@ -385,7 +408,8 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
                 replies.push({ text: `${g(safeState, 'מעולה. שתף', 'מעולה. שתפי')} את שעות הפתיחה שלך מיום ראשון עד שישי (וסופ״ש, אם שונה).`, showActions: true });
             } else if (isCatalogCollectionRequest(text)) {
                 safeState.phase = 'catalog';
-                replies.push({ text: `${g(safeState, 'מצוין. שלח', 'מצוין. שלחי')} לי בבקשה את רשימת המוצרים או השירותים שלך.`, showActions: true });
+                safeState.catalogSubPhase = 'askingName';
+                replies.push({ text: `${g(safeState, 'מצוין. מה שם המוצר או השירות הראשון שתרצה להוסיף?', 'מצוין. מה שם המוצר או השירות הראשון שתרצי להוסיף?')}`, showActions: true });
             } else if (myInfo && (safeState.ownerName || safeState.businessName)) {
                 // Info request already handled globally for myInfo, but if we're here it means it wasn't caught
                 replies.push({ text: formatSummary(safeState), showActions: true });
@@ -408,14 +432,67 @@ export const runForliTurn = ({ text, state, isExistingBusiness, activeBusinessNa
         }
 
         case 'catalog': {
-            safeState.catalog = text.trim();
-            replies.push({ text: `תודה, ${g(safeState, 'שמרתי', 'שמרתי')} את הקטלוג. יש עוד משהו שתרצה לעדכן?`, showActions: true });
-            safeState.phase = 'cardReady';
+            if (!safeState.collectedProducts) safeState.collectedProducts = [];
+
+            if (isEditRequest(text)) {
+                if (safeState.collectedProducts.length > 0) {
+                    const removed = safeState.collectedProducts.pop();
+                    safeState.catalogSubPhase = 'askingName';
+                    safeState.currentProductName = undefined;
+                    safeState.currentProductDescription = undefined;
+                    replies.push({ text: `מחקתי את "${removed?.name}". בוא ננסה שוב. מה שם המוצר?`, showActions: true });
+                } else {
+                    replies.push({ text: 'עדיין אין מה לערוך, בוא נתחיל. מה שם המוצר הראשון?', showActions: true });
+                    safeState.catalogSubPhase = 'askingName';
+                }
+                break;
+            }
+
+            if (safeState.catalogSubPhase === 'askingName' || !safeState.catalogSubPhase) {
+                safeState.currentProductName = text.trim();
+                safeState.catalogSubPhase = 'askingDescription';
+                replies.push({ text: `מה התיאור של ${safeState.currentProductName}?`, showActions: true });
+            } else if (safeState.catalogSubPhase === 'askingDescription') {
+                safeState.currentProductDescription = text.trim();
+                safeState.catalogSubPhase = 'askingPrice';
+                replies.push({ text: `ומה המחיר של ${safeState.currentProductName}? (רק מספר בבקשה)`, showActions: true });
+            } else if (safeState.catalogSubPhase === 'askingPrice') {
+                const price = text.trim().replace(/[^0-9.]/g, '');
+                safeState.collectedProducts.push({
+                    name: safeState.currentProductName || 'מוצר ללא שם',
+                    description: safeState.currentProductDescription || '',
+                    price: price || '0'
+                });
+
+                replies.push({
+                    text: `${g(safeState, 'מעולה, שמרתי!', 'מעולה, שמרתי!')} ${g(safeState, 'תרצה', 'תרצי')} להוסיף מוצר נוסף? (או לחץ על "סיום" למטה)`,
+                    showActions: true
+                });
+
+                // Reset for next product
+                safeState.catalogSubPhase = 'askingName';
+                safeState.currentProductName = undefined;
+                safeState.currentProductDescription = undefined;
+            }
             break;
         }
 
         case 'faqs': {
             const faqList = tryParseFaqList(text);
+
+            if (isEditRequest(text)) {
+                if (safeState.collectedFaqs && safeState.collectedFaqs.length > 0) {
+                    const removed = safeState.collectedFaqs.pop();
+                    safeState.faqSubPhase = 'asking';
+                    safeState.currentFaqQuestion = undefined;
+                    replies.push({ text: `מחקתי את השאלה: "${removed?.q}". בוא ננסה שוב. מה השאלה?`, showActions: true });
+                } else {
+                    replies.push({ text: 'עדיין אין שאלות לערוך. מה השאלה הראשונה?', showActions: true });
+                    safeState.faqSubPhase = 'asking';
+                }
+                break;
+            }
+
             if (faqList.length > 0) {
                 // Bulk add
                 for (let i = 0; i < faqList.length; i += 2) {
