@@ -13,6 +13,18 @@ export const LoginPage: React.FC = () => {
   const { sendOTP, signInWithOTP } = useAuth();
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0 && step === 'otp') {
+      setStep('phone');
+    }
+    return () => clearInterval(interval);
+  }, [timeLeft, step]);
+
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -29,17 +41,9 @@ export const LoginPage: React.FC = () => {
       setStep('otp');
       setTimeLeft(300); // 5 minutes
 
-      // Countdown timer
-      const interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setStep('phone');
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+      // Countdown timer - managed in a separate useEffect or using a functional update
+      // For now, let's just use the setTimeLeft and handle the side effect in a useEffect
+      setTimeLeft(300);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send OTP');
     } finally {
