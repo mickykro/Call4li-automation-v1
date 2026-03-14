@@ -1,5 +1,5 @@
 import React, { useState, useOptimistic } from 'react';
-import { useConversations, Conversation, Message } from '../hooks/useConversations';
+import { useConversations, Message } from '../hooks/useConversations';
 import { MessageCircle, Clock, AlertCircle, Loader } from 'lucide-react';
 
 interface ConversationsViewProps {

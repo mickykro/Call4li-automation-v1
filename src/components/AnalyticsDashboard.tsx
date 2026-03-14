@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { doc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Activity, Phone, Clock, AlertCircle, TrendingUp } from 'lucide-react';
 
 interface AnalyticsDashboardProps {
@@ -19,10 +19,6 @@ interface CallbackTask {
   customerName: string;
   callbackTime: Date;
   status: 'pending' | 'completed' | 'missed';
-}
-
-interface StatusBadgeProps {
-  isActive: boolean;
 }
 
 export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ businessId }) => {

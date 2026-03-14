@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { Trash2, Plus, Edit2, Check, X, Loader } from 'lucide-react';
+import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { Trash2, Plus, Edit2, Loader } from 'lucide-react';
 import { z } from 'zod';
 
 interface FAQ {
@@ -98,9 +97,9 @@ export const FAQManager: React.FC<FAQManagerProps> = ({ businessId }) => {
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors: Record<string, string> = {};
-        error.errors.forEach((err) => {
-          if (err.path[0]) {
-            newErrors[err.path[0]] = err.message;
+        error.issues.forEach((issue) => {
+          if (issue.path[0]) {
+            newErrors[issue.path[0] as string] = issue.message;
           }
         });
         setErrors(newErrors);

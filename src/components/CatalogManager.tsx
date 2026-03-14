@@ -110,9 +110,9 @@ export const CatalogManager: React.FC<CatalogManagerProps> = ({ businessId }) =>
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors: Record<string, string> = {};
-        error.errors.forEach((err) => {
-          if (err.path[0]) {
-            newErrors[err.path[0]] = err.message;
+        error.issues.forEach((issue) => {
+          if (issue.path[0]) {
+            newErrors[issue.path[0] as string] = issue.message;
           }
         });
         setErrors(newErrors);
