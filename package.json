@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "debug:prod": "npm run build && NODE_ENV=production node --inspect=0.0.0.0:9229 node_modules/vite/bin/vite.js preview --host --port 4173"
+    "debug:prod": "npm run build && NODE_ENV=production node --inspect=0.0.0.0:9229 node_modules/vite/bin/vite.js preview --host --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -37,6 +39,7 @@
     "tailwindcss": "^4.2.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
-    "vite": "^6.4.1"
+    "vite": "^6.4.1",
+    "vitest": "^4.1.0"
   }
 }

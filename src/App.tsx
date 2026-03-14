@@ -98,22 +98,21 @@ function App() {
     const [showActions, setShowActions] = useState(false);
     const [businessId, setBusinessId] = useState<string | null>(null);
     const [activeBusinessName, setActiveBusinessName] = useState<string | undefined>(undefined);
-    const [detectedLanguage, setDetectedLanguage] = useState<ForliState['lang'] | null>(null);
+    const [savedLanguage] = useState<ForliState['lang'] | null>(() => {
+        try {
+            const stored = localStorage.getItem('forli:lastLanguage');
+            if (stored === 'he' || stored === 'en') return stored as ForliState['lang'];
+        } catch { /* ignore */ }
+        return null;
+    });
+    const detectedLanguage = useMemo(
+        () => conversationState.lang ?? savedLanguage,
+        [conversationState.lang, savedLanguage],
+    );
     const [humanHandoff, setHumanHandoff] = useState(false);
     const [numberSwitch, setNumberSwitch] = useState(false);
     const feedRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-    useEffect(() => {
-        try {
-            const stored = localStorage.getItem('forli:lastLanguage');
-            if (stored === 'he' || stored === 'en') {
-                setDetectedLanguage(stored);
-            }
-        } catch (err) {
-            console.warn('Failed to restore language', err);
-        }
-    }, []);
 
     useEffect(() => {
         if (feedRef.current) {
@@ -123,7 +122,6 @@ function App() {
 
     useEffect(() => {
         if (!conversationState.lang) return;
-        setDetectedLanguage(conversationState.lang);
         try {
             localStorage.setItem('forli:lastLanguage', conversationState.lang);
         } catch (err) {
@@ -249,15 +247,6 @@ function App() {
         setNumberSwitch(!!result.numberSwitch);
 
         await handleBotReplies(result.replies);
-
-        if (result.state.lang) {
-            setDetectedLanguage(result.state.lang);
-            try {
-                localStorage.setItem('forli:lastLanguage', result.state.lang);
-            } catch (err) {
-                console.warn('Failed to persist language', err);
-            }
-        }
 
         if (result.businessPayload && !businessId) {
             try {
