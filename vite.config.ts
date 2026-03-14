@@ -11,25 +11,14 @@ export default defineConfig({
         tailwindcss(),
     ],
     server: {
-        host: '127.0.0.1',
+        host: true, // Listen on all local IPs
         port: 5173,
+        hmr: {
+            host: '127.0.0.1', // Explicitly tell the client to connect via 127.0.0.1
+            protocol: 'ws'
+        },
         watch: {
             ignored: ['**/node_modules/**', '**/.git/**']
         }
-    },
-    optimizeDeps: {
-        include: [
-            'react',
-            'react-dom',
-            'react-router-dom',
-            'firebase/app',
-            'firebase/firestore',
-            '@google/generative-ai',
-            'lucide-react',
-            'date-fns',
-            'clsx',
-            'tailwind-merge',
-            'class-variance-authority',
-        ]
     }
 })
