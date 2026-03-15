@@ -20,6 +20,14 @@ export default defineConfig({
       usePolling: false, // Set to true if you're on a VM or Docker, but false is faster for local macOS
       ignored: ['**/node_modules/**', '**/.git/**'],
     },
+    proxy: {
+      // Forward API requests to a local backend/dev server (e.g., vercel dev on 3000)
+      '/api': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   optimizeDeps: {
     // Force pre-bundling of major dependencies to speed up initial load

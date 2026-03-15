@@ -8,6 +8,8 @@ import { OpeningHoursSelector } from '../components/OpeningHoursSelector';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
 import { AdminPanel } from '../components/AdminPanel';
 import { MessageCircle, Settings, BarChart3, Users, LogOut, Menu, X } from 'lucide-react';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useLocale } from '../contexts/LocaleContext';
 
 type TabType = 'conversations' | 'faq' | 'catalog' | 'hours' | 'analytics' | 'admin';
 
@@ -16,21 +18,22 @@ export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('conversations');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { t } = useLocale();
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
-  const isAdmin = user?.email?.endsWith('@call4li.admin'); // Simple admin check
+  const isAdmin = false; // Admin disabled in mock auth
 
   const tabs: Array<{ id: TabType; label: string; icon: React.ReactNode; requiresAdmin?: boolean }> = [
-    { id: 'conversations', label: 'Live Feed', icon: <MessageCircle className="w-5 h-5" /> },
-    { id: 'faq', label: 'FAQ Manager', icon: <Settings className="w-5 h-5" /> },
-    { id: 'catalog', label: 'Catalog', icon: <Users className="w-5 h-5" /> },
-    { id: 'hours', label: 'Opening Hours', icon: <Settings className="w-5 h-5" /> },
-    { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
-    ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin Panel', icon: <Settings className="w-5 h-5" />, requiresAdmin: true }] : []),
+    { id: 'conversations', label: t('nav.liveFeed'), icon: <MessageCircle className="w-5 h-5" /> },
+    { id: 'faq', label: t('nav.faq'), icon: <Settings className="w-5 h-5" /> },
+    { id: 'catalog', label: t('nav.catalog'), icon: <Users className="w-5 h-5" /> },
+    { id: 'hours', label: t('nav.hours'), icon: <Settings className="w-5 h-5" /> },
+    { id: 'analytics', label: t('nav.analytics'), icon: <BarChart3 className="w-5 h-5" /> },
+    ...(isAdmin ? [{ id: 'admin' as const, label: t('nav.admin'), icon: <Settings className="w-5 h-5" />, requiresAdmin: true }] : []),
   ];
 
   return (
@@ -101,21 +104,22 @@ export const DashboardPage: React.FC = () => {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {tabs.find((t) => t.id === activeTab)?.label}
-              </h1>
-              <p className="text-sm text-gray-600 mt-1">
-                {activeTab === 'conversations' && 'Real-time conversation monitoring'}
-                {activeTab === 'faq' && 'Manage your FAQ knowledge base'}
-                {activeTab === 'catalog' && 'Manage your product catalog'}
-                {activeTab === 'hours' && 'Set your business opening hours'}
-                {activeTab === 'analytics' && 'View system performance and analytics'}
-                {activeTab === 'admin' && 'Manage all businesses'}
-              </p>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {tabs.find((t) => t.id === activeTab)?.label}
+                </h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  {activeTab === 'conversations' && t('dashboard.desc.conversations')}
+                  {activeTab === 'faq' && t('dashboard.desc.faq')}
+                  {activeTab === 'catalog' && t('dashboard.desc.catalog')}
+                  {activeTab === 'hours' && t('dashboard.desc.hours')}
+                  {activeTab === 'analytics' && t('dashboard.desc.analytics')}
+                  {activeTab === 'admin' && t('dashboard.desc.admin')}
+                </p>
+              </div>
+              <LanguageSwitcher className="hidden md:flex" />
             </div>
-          </div>
         </div>
 
         {/* Content Area */}

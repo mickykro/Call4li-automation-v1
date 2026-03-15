@@ -176,7 +176,7 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId
                             : 'text-gray-600'
                         }`}
                       >
-                        {formatTime(message.timestamp.toDate())}
+                        {formatTime(safeDate(message.timestamp))}
                       </p>
                     </div>
                   </div>
@@ -237,6 +237,12 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSend }) => {
   );
 };
 
+function safeDate(value: any): Date {
+  if (value instanceof Date) return value;
+  if (value?.toDate) return value.toDate();
+  return new Date(value);
+}
+
 function formatTime(date: Date): string {
   const now = new Date();
   const diff = now.getTime() - date.getTime();
@@ -244,6 +250,7 @@ function formatTime(date: Date): string {
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
 
+  if (Number.isNaN(diff)) return '';
   if (minutes < 1) return 'just now';
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;

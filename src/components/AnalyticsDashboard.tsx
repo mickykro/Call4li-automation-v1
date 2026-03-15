@@ -1,286 +1,466 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { db } from '../firebase';
-import { doc, collection, query, where, onSnapshot } from 'firebase/firestore';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Activity, Phone, Clock, AlertCircle, TrendingUp } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  BarChart,
+  Bar,
+  CartesianGrid,
+} from 'recharts';
+import { Activity, CheckCircle2, Clock, Database, Loader, PhoneOff, PhoneOutgoing } from 'lucide-react';
+
+type Conversation = {
+  id: string;
+  status?: string;
+  lastMessageTime?: Date | null;
+  messages?: Array<{
+    senderId: string;
+    timestamp?: Date | { toDate?: () => Date } | string;
+  }>;
+};
+
+type Callback = {
+  id: string;
+  customerName?: string;
+  callbackTime?: Date | null;
+  status?: 'pending' | 'completed' | 'missed';
+};
 
 interface AnalyticsDashboardProps {
   businessId: string | null;
 }
 
-interface CallData {
-  date: string;
-  missedCalls: number;
-  handledCalls: number;
-}
+type StatusBadge = 'ok' | 'warn' | 'error';
 
-interface CallbackTask {
-  id: string;
-  customerName: string;
-  callbackTime: Date;
-  status: 'pending' | 'completed' | 'missed';
-}
+const toDate = (value: unknown): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as any).toDate === 'function') {
+    return (value as any).toDate();
+  }
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+};
+
+const formatDuration = (ms: number) => {
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  if (ms <= 0) return 'N/A';
+  if (minutes === 0) return `${seconds}s`;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return `${hours}h ${remMinutes}m`;
+};
 
 export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ businessId }) => {
-  const [isLive, setIsLive] = useState(false);
-  const [callData, setCallData] = useState<CallData[]>([]);
-  const [callbackTasks, setCallbackTasks] = useState<CallbackTask[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [callbacks, setCallbacks] = useState<Callback[]>([]);
+  const [businessStatus, setBusinessStatus] = useState<{ followMeActive?: boolean; followMeVerified?: boolean; uptime?: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalCalls: 0,
-    missedCalls: 0,
-    handledCalls: 0,
-    averageResponseTime: 0,
-  });
+  const [error, setError] = useState<string | null>(null);
 
-  // Monitor live status
   useEffect(() => {
-    if (!businessId) return;
+    if (!businessId) {
+      setConversations([]);
+      setLoading(false);
+      return;
+    }
 
-    const businessRef = doc(db, 'businesses', businessId);
-    const unsubscribe = onSnapshot(businessRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setIsLive(snapshot.data().followMeActive === true);
+    setLoading(true);
+    const q = query(collection(db, 'conversations'), where('businessId', '==', businessId));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: Conversation[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          list.push({
+            id: docSnap.id,
+            status: data.status,
+            lastMessageTime: toDate(data.lastMessageTime),
+            messages: data.messages || [],
+          });
+        });
+        setConversations(list);
+        setError(null);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Error loading conversations', err);
+        setError('Failed to load analytics data');
+        setLoading(false);
       }
-    });
+    );
 
     return unsubscribe;
   }, [businessId]);
 
-  // Load call data for the last 7 days
   useEffect(() => {
-    if (!businessId) return;
-
-    const generateMockData = () => {
-      const data: CallData[] = [];
-      const today = new Date();
-
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-
-        data.push({
-          date: date.toLocaleDateString('en-US', { weekday: 'short' }),
-          missedCalls: Math.floor(Math.random() * 15) + 2,
-          handledCalls: Math.floor(Math.random() * 25) + 5,
-        });
-      }
-
-      return data;
-    };
-
-    setCallData(generateMockData());
-
-    // Calculate stats
-    const totalMissed = generateMockData().reduce((sum, d) => sum + d.missedCalls, 0);
-    const totalHandled = generateMockData().reduce((sum, d) => sum + d.handledCalls, 0);
-
-    setStats({
-      totalCalls: totalMissed + totalHandled,
-      missedCalls: totalMissed,
-      handledCalls: totalHandled,
-      averageResponseTime: Math.floor(Math.random() * 30) + 10,
-    });
-
-    setLoading(false);
-  }, [businessId]);
-
-  // Load callback tasks
-  useEffect(() => {
-    if (!businessId) return;
+    if (!businessId) {
+      setCallbacks([]);
+      return;
+    }
 
     const q = query(
       collection(db, 'callbacks'),
       where('businessId', '==', businessId),
-      where('status', '==', 'pending')
+      orderBy('callbackTime', 'asc')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const tasks: CallbackTask[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        tasks.push({
-          id: doc.id,
+      const list: Callback[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          id: docSnap.id,
           customerName: data.customerName,
-          callbackTime: data.callbackTime?.toDate() || new Date(),
+          callbackTime: toDate(data.callbackTime),
           status: data.status,
         });
       });
-
-      // Sort by callback time
-      tasks.sort((a, b) => a.callbackTime.getTime() - b.callbackTime.getTime());
-      setCallbackTasks(tasks.slice(0, 5)); // Show top 5
+      setCallbacks(list);
     });
 
     return unsubscribe;
   }, [businessId]);
 
-  if (loading) {
+  useEffect(() => {
+    if (!businessId) return;
+    const ref = doc(db, 'businesses', businessId);
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setBusinessStatus({
+          followMeActive: data.followMeActive,
+          followMeVerified: data.followMeVerified,
+          uptime: data.uptimePercent,
+        });
+      }
+    });
+    return unsubscribe;
+  }, [businessId]);
+
+  const last7DaysBuckets = useMemo(() => {
+    const today = new Date();
+    const buckets = Array.from({ length: 7 }).map((_, idx) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (6 - idx));
+      return { key: d.toDateString(), label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), count: 0 };
+    });
+
+    conversations.forEach((conv) => {
+      const ts = conv.lastMessageTime;
+      if (!ts) return;
+      const diffDays = Math.floor((today.getTime() - ts.getTime()) / 86400000);
+      if (diffDays >= 0 && diffDays < 7) {
+        const index = 6 - diffDays;
+        buckets[index].count += 1;
+      }
+    });
+    return buckets;
+  }, [conversations]);
+
+  const totals = useMemo(() => {
+    const recentConvs = conversations.filter((c) => {
+      if (!c.lastMessageTime) return false;
+      return Date.now() - c.lastMessageTime.getTime() <= 7 * 86400000;
+    });
+
+    const totalCalls = recentConvs.length;
+    const handled = recentConvs.filter((c) => c.status && c.status !== 'pending').length;
+    const missed = totalCalls - handled;
+
+    const responseDurations: number[] = [];
+    recentConvs.forEach((conv) => {
+      const messages = conv.messages || [];
+      const firstCustomer = messages.find((m) => m.senderId !== businessId);
+      if (!firstCustomer) return;
+      const customerTime = toDate(firstCustomer.timestamp);
+      if (!customerTime) return;
+      const firstReply = messages.find((m) => {
+        if (m.senderId !== businessId) return false;
+        const rt = toDate(m.timestamp);
+        return rt ? rt.getTime() > customerTime.getTime() : false;
+      });
+      if (!firstReply) return;
+      const replyTime = toDate(firstReply.timestamp);
+      if (!replyTime) return;
+      responseDurations.push(replyTime.getTime() - customerTime.getTime());
+    });
+
+    const avgResponseMs = responseDurations.length
+      ? responseDurations.reduce((a, b) => a + b, 0) / responseDurations.length
+      : 0;
+
+    const handlingRate = totalCalls === 0 ? 0 : Math.round((handled / totalCalls) * 100);
+
+    return { totalCalls, handled, missed, avgResponseMs, handlingRate };
+  }, [conversations, businessId]);
+
+  const statusBadge: StatusBadge = useMemo(() => {
+    const active = businessStatus?.followMeActive;
+    const verified = businessStatus?.followMeVerified;
+    if (active && verified) return 'ok';
+    if (!active && !verified) return 'error';
+    return 'warn';
+  }, [businessStatus]);
+
+  const uptime = businessStatus?.uptime ?? 99.5;
+
+  const handleCallbackStatus = async (callback: Callback, status: 'completed' | 'missed') => {
+    if (!businessId) return;
+    try {
+      await updateDoc(doc(db, 'callbacks', callback.id), { status });
+    } catch (err) {
+      console.error('Error updating callback status', err);
+    }
+  };
+
+  if (!businessId) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <p className="text-gray-600">Loading analytics...</p>
+      <div className="bg-white p-6 rounded-lg shadow-sm text-center text-gray-700">
+        Connect a business to view analytics.
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Status Badge */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatusCard
-          icon={<Activity className="w-6 h-6" />}
+        <StatCard
           label="System Status"
-          value={isLive ? 'Live' : 'Disconnected'}
-          color={isLive ? 'green' : 'red'}
+          value={statusBadge === 'ok' ? 'Online' : statusBadge === 'warn' ? 'Attention' : 'Offline'}
+          icon={<Activity className="w-5 h-5" />}
+          badge={statusBadge}
+          helper={
+            businessStatus?.followMeVerified
+              ? 'Follow-Me verified'
+              : 'Follow-Me pending verification'
+          }
         />
-        <StatusCard
-          icon={<Phone className="w-6 h-6" />}
-          label="Total Calls (7 days)"
-          value={stats.totalCalls.toString()}
-          color="blue"
+        <StatCard
+          label="Calls (7d)"
+          value={totals.totalCalls.toString()}
+          icon={<Database className="w-5 h-5" />}
+          helper="Conversations seen in last 7 days"
         />
-        <StatusCard
-          icon={<TrendingUp className="w-6 h-6" />}
-          label="Handled Calls"
-          value={stats.handledCalls.toString()}
-          color="green"
+        <StatCard
+          label="Handled"
+          value={totals.handled.toString()}
+          icon={<PhoneOutgoing className="w-5 h-5" />}
+          helper="Status not pending"
         />
-        <StatusCard
-          icon={<AlertCircle className="w-6 h-6" />}
-          label="Missed Calls"
-          value={stats.missedCalls.toString()}
-          color="orange"
+        <StatCard
+          label="Missed"
+          value={totals.missed.toString()}
+          icon={<PhoneOff className="w-5 h-5" />}
+          helper="Pending conversations"
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Call Volume Chart */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Call Volume (Last 7 Days)</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={callData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="handledCalls" fill="#10b981" name="Handled Calls" />
-              <Bar dataKey="missedCalls" fill="#ef4444" name="Missed Calls" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Callback Queue */}
-        <div className="bg-white rounded-lg shadow p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg shadow p-4 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center">
-              <Clock className="w-5 h-5 mr-2 text-green-600" />
-              Upcoming Callbacks
-            </h3>
-            <span className="bg-green-100 text-green-800 text-sm font-semibold px-3 py-1 rounded-full">
-              {callbackTasks.length} pending
-            </span>
+            <h3 className="text-lg font-semibold text-gray-900">Call Volume (Last 7 Days)</h3>
+            <span className="text-sm text-gray-500">Live</span>
           </div>
+          <div className="h-64">
+            {loading ? (
+              <div className="flex items-center justify-center h-full text-gray-600">
+                <Loader className="w-6 h-6 animate-spin mr-2" /> Loading...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={last7DaysBuckets} margin={{ left: -10, right: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="label" stroke="#6b7280" />
+                  <YAxis allowDecimals={false} stroke="#6b7280" />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
 
-          {callbackTasks.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p>No pending callbacks</p>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Handling Rate</h3>
+            <span className="text-sm text-gray-500">{totals.handlingRate}%</span>
+          </div>
+          <div className="h-64">
+            {loading ? (
+              <div className="flex items-center justify-center h-full text-gray-600">
+                <Loader className="w-6 h-6 animate-spin mr-2" /> Loading...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[{ name: 'Calls', handled: totals.handled, missed: totals.missed }]}
+                  margin={{ left: -10, right: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="name" stroke="#6b7280" />
+                  <YAxis allowDecimals={false} stroke="#6b7280" />
+                  <Tooltip />
+                  <Bar dataKey="handled" stackId="calls" fill="#16a34a" name="Handled" />
+                  <Bar dataKey="missed" stackId="calls" fill="#ef4444" name="Missed" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <p className="text-sm text-gray-600 mt-2">Handled vs missed conversations based on status.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg shadow p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Avg Response Time</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {totals.avgResponseMs ? formatDuration(totals.avgResponseMs) : 'N/A'}
+              </p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {callbackTasks.map((task) => (
-                <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <div>
-                    <p className="font-semibold text-gray-900">{task.customerName}</p>
-                    <p className="text-sm text-gray-600">
-                      {task.callbackTime.toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                  <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded">
-                    Pending
-                  </span>
+            <Clock className="w-6 h-6 text-green-600" />
+          </div>
+          <p className="text-sm text-gray-600">Calculated from customer message to first business reply.</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">System Uptime</p>
+              <p className="text-2xl font-bold text-gray-900">{uptime.toFixed(2)}%</p>
+            </div>
+            <Activity className="w-6 h-6 text-green-600" />
+          </div>
+          <p className="text-sm text-gray-600">Configured on business doc (uptimePercent).</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Pending Callbacks</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {callbacks.filter((c) => c.status === 'pending').length}
+              </p>
+            </div>
+            <CheckCircle2 className="w-6 h-6 text-green-600" />
+          </div>
+          <p className="text-sm text-gray-600">Callbacks waiting to be completed.</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Callback Queue</h3>
+          <span className="text-sm text-gray-600">Live sync</span>
+        </div>
+        {callbacks.length === 0 ? (
+          <div className="p-6 text-center text-gray-600">No callbacks scheduled.</div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {callbacks.map((cb) => (
+              <div key={cb.id} className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-gray-900">{cb.customerName || 'Customer'}</p>
+                  <p className="text-sm text-gray-600">
+                    {cb.callbackTime ? cb.callbackTime.toLocaleString() : 'No time set'}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Performance Metrics */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Performance Metrics</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <MetricCard
-            label="Average Response Time"
-            value={`${stats.averageResponseTime}s`}
-            description="Time to handle incoming calls"
-          />
-          <MetricCard
-            label="Call Handling Rate"
-            value={`${Math.round((stats.handledCalls / stats.totalCalls) * 100)}%`}
-            description="Percentage of calls handled"
-          />
-          <MetricCard
-            label="Uptime"
-            value={isLive ? '100%' : '0%'}
-            description="System availability"
-          />
-        </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      cb.status === 'completed'
+                        ? 'bg-green-100 text-green-800'
+                        : cb.status === 'missed'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}
+                  >
+                    {cb.status || 'pending'}
+                  </span>
+                  {cb.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => handleCallbackStatus(cb, 'completed')}
+                        className="px-3 py-1 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+                      >
+                        Complete
+                      </button>
+                      <button
+                        onClick={() => handleCallbackStatus(cb, 'missed')}
+                        className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+                      >
+                        Missed
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-interface StatusCardProps {
+interface StatCardProps {
+  label: string;
+  value: string;
   icon: React.ReactNode;
-  label: string;
-  value: string;
-  color: 'green' | 'red' | 'blue' | 'orange';
+  helper?: string;
+  badge?: StatusBadge;
 }
 
-const StatusCard: React.FC<StatusCardProps> = ({ icon, label, value, color }) => {
-  const colorClasses = {
-    green: 'bg-green-50 border-green-200 text-green-900',
-    red: 'bg-red-50 border-red-200 text-red-900',
-    blue: 'bg-blue-50 border-blue-200 text-blue-900',
-    orange: 'bg-orange-50 border-orange-200 text-orange-900',
-  };
-
-  const iconColorClasses = {
-    green: 'text-green-600',
-    red: 'text-red-600',
-    blue: 'text-blue-600',
-    orange: 'text-orange-600',
-  };
-
-  return (
-    <div className={`border rounded-lg p-4 ${colorClasses[color]}`}>
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-medium">{label}</p>
-        <div className={iconColorClasses[color]}>{icon}</div>
-      </div>
-      <p className="text-2xl font-bold">{value}</p>
+const StatCard: React.FC<StatCardProps> = ({ label, value, icon, helper, badge }) => (
+  <div className="bg-white rounded-lg shadow p-4">
+    <div className="flex items-center justify-between mb-2">
+      <p className="text-sm text-gray-600">{label}</p>
+      <span className="text-gray-500">{icon}</span>
     </div>
-  );
-};
-
-interface MetricCardProps {
-  label: string;
-  value: string;
-  description: string;
-}
-
-const MetricCard: React.FC<MetricCardProps> = ({ label, value, description }) => {
-  return (
-    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-      <p className="text-sm text-gray-600 mb-1">{label}</p>
-      <p className="text-3xl font-bold text-gray-900 mb-2">{value}</p>
-      <p className="text-xs text-gray-500">{description}</p>
+    <div className="flex items-baseline gap-2">
+      <p className="text-3xl font-bold text-gray-900">{value}</p>
+      {badge && <Badge type={badge} />}
     </div>
-  );
+    {helper && <p className="text-sm text-gray-600 mt-1">{helper}</p>}
+  </div>
+);
+
+const Badge: React.FC<{ type: StatusBadge }> = ({ type }) => {
+  const styles: Record<StatusBadge, string> = {
+    ok: 'bg-green-100 text-green-800',
+    warn: 'bg-yellow-100 text-yellow-800',
+    error: 'bg-red-100 text-red-800',
+  };
+  const labels: Record<StatusBadge, string> = {
+    ok: 'OK',
+    warn: 'Check',
+    error: 'Offline',
+  };
+  return <span className={`text-xs font-semibold px-2 py-1 rounded-full ${styles[type]}`}>{labels[type]}</span>;
 };

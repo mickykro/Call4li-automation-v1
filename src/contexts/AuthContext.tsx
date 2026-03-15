@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { signInWithCustomToken, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { app } from '../firebase';
-import { getAuth } from 'firebase/auth';
+import React, { createContext, useContext, useState } from 'react';
+
+type AuthUser = {
+  uid: string;
+  phoneNumber: string;
+};
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
   signInWithOTP: (phoneNumber: string, code: string) => Promise<void>;
   sendOTP: (phoneNumber: string) => Promise<void>;
@@ -15,55 +17,45 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading] = useState(false);
   const [businessId, setBusinessId] = useState<string | null>(null);
-  const auth = getAuth(app);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-
-    return unsubscribe;
-  }, [auth]);
+  const [pendingOtp, setPendingOtp] = useState<{ phone: string; code: string } | null>(null);
 
   const sendOTP = async (phoneNumber: string) => {
-    const response = await fetch('/api/auth/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to send OTP');
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      throw new Error('Please enter a valid phone number');
     }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setPendingOtp({ phone: cleanPhone, code });
+    // Surface code in console for dev convenience
+    console.info('OTP code (dev only):', code);
   };
 
   const signInWithOTP = async (phoneNumber: string, code: string) => {
-    const response = await fetch('/api/auth/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phoneNumber, code }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to verify OTP');
+    if (!pendingOtp) {
+      throw new Error('No OTP requested');
+    }
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    if (cleanPhone !== pendingOtp.phone) {
+      throw new Error('Phone number does not match OTP request');
+    }
+    if (code !== pendingOtp.code) {
+      throw new Error('Invalid OTP');
     }
 
-    const data = await response.json();
-    setBusinessId(data.businessId);
-
-    // Sign in with custom token
-    await signInWithCustomToken(auth, data.token);
+    const uid = `mock-${cleanPhone}`;
+    setUser({ uid, phoneNumber: cleanPhone });
+    setBusinessId(`biz-${cleanPhone}`);
+    setPendingOtp(null);
   };
 
   const logout = async () => {
-    await signOut(auth);
+    setUser(null);
     setBusinessId(null);
+    setPendingOtp(null);
   };
 
   return (
