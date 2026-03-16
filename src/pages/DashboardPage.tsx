@@ -10,6 +10,7 @@ import { AdminPanel } from '../components/AdminPanel';
 import { MessageCircle, Settings, BarChart3, Users, LogOut, Menu, X } from 'lucide-react';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useLocale } from '../contexts/LocaleContext';
+import { useBusinessProfile } from '../hooks/useBusinessProfile';
 
 type TabType = 'conversations' | 'faq' | 'catalog' | 'hours' | 'analytics' | 'admin';
 
@@ -19,6 +20,8 @@ export const DashboardPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('conversations');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { t } = useLocale();
+  const { profile } = useBusinessProfile(user?.phoneNumber || null);
+  const effectiveBusinessId = profile?.id || businessId;
 
   const handleLogout = async () => {
     await logout();
@@ -46,7 +49,7 @@ export const DashboardPage: React.FC = () => {
       >
         {/* Logo */}
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <div className={`flex items-center ${!sidebarOpen && 'justify-center w-full'}`}>
+          <div className={`flex items-center ${!sidebarOpen ? 'justify-center w-full' : ''}`}>
             <MessageCircle className="w-8 h-8 text-green-600" />
             {sidebarOpen && <span className="ml-2 font-bold text-gray-900">Call4li</span>}
           </div>
@@ -104,31 +107,60 @@ export const DashboardPage: React.FC = () => {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  {tabs.find((t) => t.id === activeTab)?.label}
-                </h1>
-                <p className="text-sm text-gray-600 mt-1">
-                  {activeTab === 'conversations' && t('dashboard.desc.conversations')}
-                  {activeTab === 'faq' && t('dashboard.desc.faq')}
-                  {activeTab === 'catalog' && t('dashboard.desc.catalog')}
-                  {activeTab === 'hours' && t('dashboard.desc.hours')}
-                  {activeTab === 'analytics' && t('dashboard.desc.analytics')}
-                  {activeTab === 'admin' && t('dashboard.desc.admin')}
-                </p>
-              </div>
-              <LanguageSwitcher className="hidden md:flex" />
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {tabs.find((t) => t.id === activeTab)?.label}
+              </h1>
+              <p className="text-sm text-gray-600 mt-1">
+                {activeTab === 'conversations' && t('dashboard.desc.conversations')}
+                {activeTab === 'faq' && t('dashboard.desc.faq')}
+                {activeTab === 'catalog' && t('dashboard.desc.catalog')}
+                {activeTab === 'hours' && t('dashboard.desc.hours')}
+                {activeTab === 'analytics' && t('dashboard.desc.analytics')}
+                {activeTab === 'admin' && t('dashboard.desc.admin')}
+              </p>
             </div>
+            <div className="flex items-center gap-4">
+              <LanguageSwitcher className="hidden md:flex" />
+              <div className="hidden lg:flex flex-col items-end bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 min-w-[240px]">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">My Profile</p>
+                {profile ? (
+                  <>
+                    <p className="text-sm text-gray-900 font-semibold">{profile.name || 'Business'}</p>
+                    <p className="text-xs text-gray-600">{profile.phone || user?.phoneNumber}</p>
+                    <p className="text-xs text-gray-600">{profile.email || 'No email'}</p>
+                    {profile.description && (
+                      <p className="text-xs text-gray-700 mt-1 line-clamp-2 text-right">{profile.description}</p>
+                    )}
+                    <div className="flex gap-2 mt-1 text-xs text-gray-700">
+                      {profile.plan && (
+                        <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-semibold">
+                          {profile.plan}
+                        </span>
+                      )}
+                      {profile.status && (
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-semibold">
+                          {profile.status}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500">No profile found</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Content Area */}
         <div className="flex-1 overflow-auto p-6">
-          {activeTab === 'conversations' && <ConversationsView businessId={businessId} />}
-          {activeTab === 'faq' && <FAQManager businessId={businessId} />}
-          {activeTab === 'catalog' && <CatalogManager businessId={businessId} />}
-          {activeTab === 'hours' && <OpeningHoursSelector businessId={businessId} />}
-          {activeTab === 'analytics' && <AnalyticsDashboard businessId={businessId} />}
+          {activeTab === 'conversations' && <ConversationsView businessId={effectiveBusinessId} />}
+          {activeTab === 'faq' && <FAQManager businessId={effectiveBusinessId} />}
+          {activeTab === 'catalog' && <CatalogManager businessId={effectiveBusinessId} />}
+          {activeTab === 'hours' && <OpeningHoursSelector businessId={effectiveBusinessId} />}
+          {activeTab === 'analytics' && <AnalyticsDashboard businessId={effectiveBusinessId} />}
           {activeTab === 'admin' && <AdminPanel />}
         </div>
       </div>

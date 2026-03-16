@@ -39,10 +39,7 @@ export const useConversations = (businessId: string | null) => {
     }
 
     try {
-      const q = query(
-        collection(db, 'conversations'),
-        where('businessId', '==', businessId)
-      );
+      const q = query(collection(db, 'conversations'), where('businessId', '==', businessId));
 
       const unsubscribe = onSnapshot(
         q,
@@ -66,9 +63,8 @@ export const useConversations = (businessId: string | null) => {
             });
           });
 
-          // Sort by last message time (newest first)
-          conversationsList.sort((a, b) =>
-            b.lastMessageTime.toDate().getTime() - a.lastMessageTime.toDate().getTime()
+          conversationsList.sort(
+            (a, b) => b.lastMessageTime.toDate().getTime() - a.lastMessageTime.toDate().getTime()
           );
 
           setConversations(conversationsList);

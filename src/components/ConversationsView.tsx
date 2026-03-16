@@ -1,6 +1,7 @@
-import React, { useState, useOptimistic } from 'react';
-import { useConversations, Message } from '../hooks/useConversations';
+import React, { useMemo, useState } from 'react';
+import { useConversations } from '../hooks/useConversations';
 import { MessageCircle, Clock, AlertCircle, Loader } from 'lucide-react';
+import { useGreenChatHistory } from '../hooks/useGreenChatHistory';
 
 interface ConversationsViewProps {
   businessId: string | null;
@@ -8,40 +9,18 @@ interface ConversationsViewProps {
 
 export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId }) => {
   const { conversations, loading, error } = useConversations(businessId);
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
-  const [optimisticMessages, addOptimisticMessage] = useOptimistic<Message[], Message>(
-    [],
-    (state, newMessage) => [...state, newMessage]
+  const filtered = useMemo(
+    () => conversations.filter((c) => !businessId || c.businessId === businessId),
+    [conversations, businessId]
   );
-
-  const currentConversation = conversations.find((c) => c.id === selectedConversation);
-  const allMessages = currentConversation
-    ? [...(currentConversation.messages || []), ...optimisticMessages]
-    : [];
-
-  const handleSendMessage = async (content: string) => {
-    if (!selectedConversation || !businessId) return;
-
-    const tempMessage: Message = {
-      id: `temp-${Date.now()}`,
-      senderId: businessId,
-      senderName: 'You',
-      content,
-      timestamp: new Date() as any,
-      type: 'text',
-      status: 'sent',
-    };
-
-    addOptimisticMessage(tempMessage);
-
-    try {
-      // Send message to backend
-      // This would be implemented with actual API call
-      console.log('Message sent:', content);
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  };
+  const topConversations = useMemo(() => filtered.slice(0, 3), [filtered]);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const currentConversation =
+    topConversations.find((c) => c.id === selectedConversation) || topConversations[0] || null;
+  const chatId = currentConversation?.customerPhone
+    ? `${currentConversation.customerPhone.replace(/\D/g, '')}@c.us`
+    : null;
+  const { messages: greenMessages, loading: chatLoading, error: chatError } = useGreenChatHistory(chatId);
 
   if (loading) {
     return (
@@ -66,26 +45,34 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId
     );
   }
 
+  if (!businessId) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center text-gray-600">Connect a business to view its conversations.</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full bg-gray-50">
-      {/* Conversations List */}
+      {/* Conversations List (top 3) */}
       <div className="w-80 border-r border-gray-200 bg-white overflow-y-auto">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-xl font-bold text-gray-900 flex items-center">
             <MessageCircle className="w-6 h-6 mr-2 text-green-600" />
             Conversations
           </h2>
-          <p className="text-sm text-gray-600 mt-1">{conversations.length} active chats</p>
+          <p className="text-sm text-gray-600 mt-1">Showing latest 3 of {conversations.length} chats</p>
         </div>
 
-        {conversations.length === 0 ? (
+        {topConversations.length === 0 ? (
           <div className="p-8 text-center">
             <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-600">No conversations yet</p>
           </div>
         ) : (
           <div>
-            {conversations.map((conversation) => (
+            {topConversations.map((conversation) => (
               <button
                 key={conversation.id}
                 onClick={() => setSelectedConversation(conversation.id)}
@@ -95,9 +82,7 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">
-                      {conversation.customerName}
-                    </h3>
+                    <h3 className="font-semibold text-gray-900 truncate">{conversation.customerName}</h3>
                     <p className="text-sm text-gray-600 truncate">{conversation.customerPhone}</p>
                     <p className="text-sm text-gray-700 truncate mt-1">{conversation.lastMessage}</p>
                   </div>
@@ -119,15 +104,13 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId
 
       {/* Conversation Detail */}
       <div className="flex-1 flex flex-col">
-        {selectedConversation && currentConversation ? (
+        {currentConversation ? (
           <>
             {/* Header */}
             <div className="bg-white border-b border-gray-200 p-4 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">
-                    {currentConversation.customerName}
-                  </h2>
+                  <h2 className="text-lg font-bold text-gray-900">{currentConversation.customerName}</h2>
                   <p className="text-sm text-gray-600">{currentConversation.customerPhone}</p>
                 </div>
                 <div className="text-right">
@@ -148,45 +131,67 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {allMessages.length === 0 ? (
+              {chatLoading ? (
+                <div className="text-center text-gray-500 mt-8">
+                  <Loader className="w-6 h-6 animate-spin mx-auto mb-2" />
+                  <p>Loading chat...</p>
+                </div>
+              ) : chatError ? (
+                <div className="text-center text-red-600 mt-8">
+                  <p>{chatError}</p>
+                </div>
+              ) : greenMessages.length === 0 ? (
                 <div className="text-center text-gray-500 mt-8">
                   <MessageCircle className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                   <p>No messages yet</p>
                 </div>
               ) : (
-                allMessages.map((message) => (
+                greenMessages.map((message) => (
                   <div
                     key={message.id}
                     className={`flex ${
-                      message.senderId === businessId ? 'justify-end' : 'justify-start'
+                      message.direction === 'outgoing' ? 'justify-end' : 'justify-start'
                     }`}
                   >
                     <div
                       className={`max-w-xs px-4 py-2 rounded-lg ${
-                        message.senderId === businessId
+                        message.direction === 'outgoing'
                           ? 'bg-green-600 text-white'
                           : 'bg-gray-200 text-gray-900'
                       }`}
                     >
-                      <p className="text-sm">{message.content}</p>
+                      <p className="text-sm whitespace-pre-wrap">
+                        {message.text || message.caption || 'Unsupported message'}
+                      </p>
+                      {message.buttons && message.buttons.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {message.buttons.map((btn, idx) => (
+                            <span
+                              key={`${message.id}-btn-${idx}`}
+                              className="inline-flex text-xs bg-white/20 text-white px-2 py-1 rounded"
+                            >
+                              {btn.text}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <p
                         className={`text-xs mt-1 ${
-                          message.senderId === businessId
+                          message.direction === 'outgoing'
                             ? 'text-green-100'
                             : 'text-gray-600'
                         }`}
                       >
-                        {formatTime(safeDate(message.timestamp))}
+                        {formatTime(message.timestamp)}
                       </p>
                     </div>
                   </div>
                 ))
               )}
             </div>
-
-            {/* Message Input */}
-            <div className="bg-white border-t border-gray-200 p-4">
-              <MessageInput onSend={handleSendMessage} />
+            {/* Message Input placeholder */}
+            <div className="bg-white border-t border-gray-200 p-4 text-sm text-gray-500">
+              Replies via Green API not enabled in this mock view.
             </div>
           </>
         ) : (
@@ -201,47 +206,6 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({ businessId
     </div>
   );
 };
-
-interface MessageInputProps {
-  onSend: (message: string) => void;
-}
-
-const MessageInput: React.FC<MessageInputProps> = ({ onSend }) => {
-  const [message, setMessage] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (message.trim()) {
-      onSend(message);
-      setMessage('');
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="flex gap-2">
-      <input
-        type="text"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Type a message..."
-        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-      />
-      <button
-        type="submit"
-        disabled={!message.trim()}
-        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition"
-      >
-        Send
-      </button>
-    </form>
-  );
-};
-
-function safeDate(value: any): Date {
-  if (value instanceof Date) return value;
-  if (value?.toDate) return value.toDate();
-  return new Date(value);
-}
 
 function formatTime(date: Date): string {
   const now = new Date();
